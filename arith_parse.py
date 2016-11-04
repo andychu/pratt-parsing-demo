@@ -133,14 +133,7 @@ def MakeShellParserSpec():
   """
   spec = tdop.ParserSpec()
 
-  # -1 precedence -- doesn't matter
-  spec.Null(-1, NullConstant, ['name', 'number'])
-  spec.Null(-1, tdop.NullError, [')', ']', ':', 'eof'])
-
-  # 0 precedence -- doesn't bind until )
-  spec.Null(0, NullParen, ['('])  # for grouping
-
-  spec.Left(31, LeftIncDec, ['++', '--'])  # NOTE: Not really Infix.
+  spec.Left(31, LeftIncDec, ['++', '--'])
   spec.Left(31, LeftFuncCall, ['('])
   spec.Left(31, LeftIndex, ['['])
 
@@ -173,6 +166,13 @@ def MakeShellParserSpec():
 
   spec.Left(COMMA_PREC, LeftComma, [','])
 
+  # 0 precedence -- doesn't bind until )
+  spec.Null(0, NullParen, ['('])  # for grouping
+
+  # -1 precedence -- never used
+  spec.Null(-1, NullConstant, ['name', 'number'])
+  spec.Null(-1, tdop.NullError, [')', ']', ':', 'eof'])
+
   return spec
 
 
@@ -198,12 +198,15 @@ def ParseShell(s, expected=None):
 
 
 def main(argv):
-  s = argv[1]
-
   try:
-    tree = ParseShell(s)
-  except tdop.ParseError as e:
-    print('Error parsing %r: %s' % (s, e), file=sys.stderr)
+    s = argv[1]
+  except IndexError:
+    print('Usage: ./arith_parse.py EXPRESSION')
+  else:
+    try:
+      tree = ParseShell(s)
+    except tdop.ParseError as e:
+      print('Error parsing %r: %s' % (s, e), file=sys.stderr)
 
 
 if __name__ == '__main__':
