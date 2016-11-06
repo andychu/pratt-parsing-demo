@@ -78,6 +78,9 @@ def TestLogical(t_parse):
   t_parse("1 ? (2 ? true : false1) : false2", "(? 1 (? 2 true false1) false2)")
   t_parse("1 ? 2 ? true : false1 : false2", "(? 1 (? 2 true false1) false2)")
 
+  # Should have higher precedence than comma
+  t_parse("x ? 1 : 2, y ? 3 : 4", "(, (? x 1 2) (? y 3 4))")
+
 
 def TestUnary(t_parse):
   t_parse("!x", "(! x)")

@@ -69,11 +69,11 @@ def LeftIndex(p, token, left, unused_bp):
   return CompositeNode(token, [left, index])
 
 
-def LeftTernary(p, token, left, unused_bp):
-  """ Function call f(a, b). """
-  true_expr = p.ParseUntil(0)
+def LeftTernary(p, token, left, bp):
+  """ e.g. a > 1 ? x : y """
+  true_expr = p.ParseUntil(bp)
   p.Eat(':')
-  false_expr = p.ParseUntil(0)
+  false_expr = p.ParseUntil(bp)
   children = [left, true_expr, false_expr]
   return CompositeNode(token, children)
 
@@ -142,7 +142,7 @@ def MakeShellParserSpec():
   spec.Null(29, NullPrefixOp, ['+', '!', '~', '-'])
 
   # Right associative: 2 ** 3 ** 2 == 2 ** (3 ** 2)
-  spec.BinaryRightAssoc(27, LeftBinaryOp, ['**'])
+  spec.RightAssoc(27, LeftBinaryOp, ['**'])
   spec.Left(25, LeftBinaryOp, ['*', '/', '%'])
 
   spec.Left(23, LeftBinaryOp, ['+', '-'])
@@ -156,10 +156,10 @@ def MakeShellParserSpec():
   spec.Left(9, LeftBinaryOp, ['&&'])
   spec.Left(7, LeftBinaryOp, ['||'])
 
-  spec.Left(5, LeftTernary, ['?'])
+  spec.RightAssoc(5, LeftTernary, ['?'])
 
   # Right associative: a = b = 2 is a = (b = 2)
-  spec.BinaryRightAssoc(3, LeftAssign, [
+  spec.RightAssoc(3, LeftAssign, [
       '=',
       '+=', '-=', '*=', '/=', '%=',
       '<<=', '>>=', '&=', '^=', '|='])
