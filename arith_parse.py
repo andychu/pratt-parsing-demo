@@ -142,7 +142,7 @@ def MakeShellParserSpec():
   spec.Null(29, NullPrefixOp, ['+', '!', '~', '-'])
 
   # Right associative: 2 ** 3 ** 2 == 2 ** (3 ** 2)
-  spec.RightAssoc(27, LeftBinaryOp, ['**'])
+  spec.LeftRightAssoc(27, LeftBinaryOp, ['**'])
   spec.Left(25, LeftBinaryOp, ['*', '/', '%'])
 
   spec.Left(23, LeftBinaryOp, ['+', '-'])
@@ -156,10 +156,10 @@ def MakeShellParserSpec():
   spec.Left(9, LeftBinaryOp, ['&&'])
   spec.Left(7, LeftBinaryOp, ['||'])
 
-  spec.RightAssoc(5, LeftTernary, ['?'])
+  spec.LeftRightAssoc(5, LeftTernary, ['?'])
 
   # Right associative: a = b = 2 is a = (b = 2)
-  spec.RightAssoc(3, LeftAssign, [
+  spec.LeftRightAssoc(3, LeftAssign, [
       '=',
       '+=', '-=', '*=', '/=', '%=',
       '<<=', '>>=', '&=', '^=', '|='])

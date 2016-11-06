@@ -145,8 +145,8 @@ class ParserSpec(object):
     """Register a token that takes an expression on the left."""
     self._RegisterLed(bp, bp, led, tokens)
 
-  def RightAssoc(self, bp, led, tokens):
-    """Register a right associative binary operator."""
+  def LeftRightAssoc(self, bp, led, tokens):
+    """Register a right associative operator."""
     self._RegisterLed(bp, bp-1, led, tokens)
 
   def LookupNull(self, token):
