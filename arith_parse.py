@@ -71,10 +71,15 @@ def LeftIndex(p, token, left, unused_bp):
 
 def LeftTernary(p, token, left, bp):
   """ e.g. a > 1 ? x : y """
-  # 0 binding power since any operators allowed until ':'
-  # Also see note here about relative precedence of ?: and assignment.
-  # http://en.cppreference.com/w/c/language/operator_precedence#cite_note-1
+  # 0 binding power since any operators allowed until ':'.  See:
+  #
+  # http://en.cppreference.com/w/c/language/operator_precedence#cite_note-2
+  #
+  # "The expression in the middle of the conditional operator (between ? and
+  # :) is parsed as if parenthesized: its precedence relative to ?: is
+  # ignored."
   true_expr = p.ParseUntil(0)
+
   p.Eat(':')
   false_expr = p.ParseUntil(bp)
   children = [left, true_expr, false_expr]
