@@ -147,10 +147,13 @@ def MakeShellParserSpec():
 
   # 29 -- binds to everything except function call, indexing, postfix ops
   spec.Null(29, NullIncDec, ['++', '--'])
-  spec.Null(29, NullPrefixOp, ['+', '!', '~', '-'])
 
   # Right associative: 2 ** 3 ** 2 == 2 ** (3 ** 2)
-  spec.LeftRightAssoc(27, LeftBinaryOp, ['**'])
+  # Binds more strongly than negation.
+  spec.LeftRightAssoc(29, LeftBinaryOp, ['**'])
+
+  spec.Null(27, NullPrefixOp, ['+', '!', '~', '-'])
+
   spec.Left(25, LeftBinaryOp, ['*', '/', '%'])
 
   spec.Left(23, LeftBinaryOp, ['+', '-'])

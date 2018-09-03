@@ -32,6 +32,7 @@ def TestArith(t_parse):
 
   t_parse("x = y", "(= x y)")
   t_parse('2 ** 3 ** 2', '(** 2 (** 3 2))')
+  t_parse('- 3 ** 2', '(- (** 3 2))')
   t_parse('a = b = 10', '(= a (= b 10))')
 
   t_parse('x = ((y*4)-2)', '(= x (- (* y 4) 2))')
