@@ -4,9 +4,11 @@ See http://www.oilshell.org/blog/2016/11/03.html
 
 Requires Python 3.  Try:
 
-    ./tests.py 
+    ./tests.py
 
-    ./arith_parse.py '1+2*3'
+Code should be typesafe:
+
+    mypy . --strict
 
 This code originally was originally based on the parser in [tinypy][], but
 every line has been changed, except possibly for some tests.

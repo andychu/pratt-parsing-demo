@@ -1,224 +1,169 @@
-#!/usr/bin/python3
-"""
-arith_parse.py: Parse shell-like and C-like arithmetic.
-"""
-
 import sys
 
-import tdop
-from tdop import Node, CompositeNode
-
-#
-# Null Denotation -- token that takes nothing on the left
-#
-
-def NullConstant(p, token, bp):
-  return Node(token)
+import tdop as p
+from tdop import Node, ParseError, TokenStream
 
 
-def NullParen(p, token, bp):
-  """ Arithmetic grouping """
-  r = p.ParseUntil(bp)
-  p.Eat(')')
-  return r
-
-
-def NullPrefixOp(p, token, bp):
-  """Prefix operator.
-  
-  Low precedence:  return, raise, etc.
-    return x+y is return (x+y), not (return x) + y
-
-  High precedence: logical negation, bitwise complement, etc.
-    !x && y is (!x) && y, not !(x && y)
-  """
-  r = p.ParseUntil(bp)
-  return CompositeNode(token, [r])
-
-
-def NullIncDec(p, token, bp):
-  """ ++x or ++x[1] """
-  right = p.ParseUntil(bp)
-  if right.token.type not in ('name', 'get'):
-    raise tdop.ParseError("Can't assign to %r (%s)" % (right, right.token))
-  return CompositeNode(token, [right])
-
-
-#
-# Left Denotation -- token that takes an expression on the left
-#
-
-def LeftIncDec(p, token, left, rbp):
-  """ For i++ and i--
-  """
-  if left.token.type not in ('name', 'get'):
-    raise tdop.ParseError("Can't assign to %r (%s)" % (left, left.token))
-  token.type = 'post' + token.type
-  return CompositeNode(token, [left])
-
-
-def LeftIndex(p, token, left, unused_bp):
-  """ index f[x+1] """
-  # f[x] or f[x][y]
-  if left.token.type not in ('name', 'get'):
-    raise tdop.ParseError("%s can't be indexed" % left)
-  index = p.ParseUntil(0)
-  p.Eat("]")
-
-  token.type = 'get'
-  return CompositeNode(token, [left, index])
-
-
-def LeftTernary(p, token, left, bp):
-  """ e.g. a > 1 ? x : y """
-  # 0 binding power since any operators allowed until ':'.  See:
-  #
-  # http://en.cppreference.com/w/c/language/operator_precedence#cite_note-2
-  #
-  # "The expression in the middle of the conditional operator (between ? and
-  # :) is parsed as if parenthesized: its precedence relative to ?: is
-  # ignored."
-  true_expr = p.ParseUntil(0)
-
-  p.Eat(':')
-  false_expr = p.ParseUntil(bp)
-  children = [left, true_expr, false_expr]
-  return CompositeNode(token, children)
-
-
-def LeftBinaryOp(p, token, left, rbp):
-  """ Normal binary operator like 1+2 or 2*3, etc. """
-  return CompositeNode(token, [left, p.ParseUntil(rbp)])
-
-
-def LeftAssign(p, token, left, rbp):
-  """ Normal binary operator like 1+2 or 2*3, etc. """
-  # x += 1, or a[i] += 1
-  if left.token.type not in ('name', 'get'):
-    raise tdop.ParseError("Can't assign to %r (%s)" % (left, left.token))
-  return CompositeNode(token, [left, p.ParseUntil(rbp)])
-
-
-def LeftComma(p, token, left, rbp):
-  """ foo, bar, baz 
-
-  Could be sequencing operator, or tuple without parens
-  """
-  r = p.ParseUntil(rbp)
-  if left.token.type == ',':  # Keep adding more children
-    left.children.append(r)
-    return left
-  children = [left, r]
-  return CompositeNode(token, children)
-
+rule_map = p.RuleMap()
 
 # For overloading of , inside function calls
 COMMA_PREC = 1
 
-def LeftFuncCall(p, token, left, unused_bp):
-  """ Function call f(a, b). """
-  children = [left]
-  # f(x) or f[i](x)
-  if left.token.type not in ('name', 'get'):
-    raise tdop.ParseError("%s can't be called" % left)
-  while not p.AtToken(')'):
-    # We don't want to grab the comma, e.g. it is NOT a sequence operator.  So
-    # set the precedence to 5.
-    children.append(p.ParseUntil(COMMA_PREC))
-    if p.AtToken(','):
-      p.Next()
-  p.Eat(")")
-  token.type = 'call'
-  return CompositeNode(token, children)
+
+# -1 precedence -- never used
+rule_map.register_null(-1, [")", "]", ":", "eof"])(p.raise_null_error)
 
 
-def MakeShellParserSpec():
-  """
-  Create a parser.
-
-  Compare the code below with this table of C operator precedence:
-  http://en.cppreference.com/w/c/language/operator_precedence
-  """
-  spec = tdop.ParserSpec()
-
-  spec.Left(31, LeftIncDec, ['++', '--'])
-  spec.Left(31, LeftFuncCall, ['('])
-  spec.Left(31, LeftIndex, ['['])
-
-  # 29 -- binds to everything except function call, indexing, postfix ops
-  spec.Null(29, NullIncDec, ['++', '--'])
-
-  # Right associative: 2 ** 3 ** 2 == 2 ** (3 ** 2)
-  # Binds more strongly than negation.
-  spec.LeftRightAssoc(29, LeftBinaryOp, ['**'])
-
-  spec.Null(27, NullPrefixOp, ['+', '!', '~', '-'])
-
-  spec.Left(25, LeftBinaryOp, ['*', '/', '%'])
-
-  spec.Left(23, LeftBinaryOp, ['+', '-'])
-  spec.Left(21, LeftBinaryOp, ['<<', '>>']) 
-  spec.Left(19, LeftBinaryOp, ['<', '>', '<=', '>='])
-  spec.Left(17, LeftBinaryOp, ['!=', '=='])
-
-  spec.Left(15, LeftBinaryOp, ['&'])
-  spec.Left(13, LeftBinaryOp, ['^'])
-  spec.Left(11, LeftBinaryOp, ['|'])
-  spec.Left(9, LeftBinaryOp, ['&&'])
-  spec.Left(7, LeftBinaryOp, ['||'])
-
-  spec.LeftRightAssoc(5, LeftTernary, ['?'])
-
-  # Right associative: a = b = 2 is a = (b = 2)
-  spec.LeftRightAssoc(3, LeftAssign, [
-      '=',
-      '+=', '-=', '*=', '/=', '%=',
-      '<<=', '>>=', '&=', '^=', '|='])
-
-  spec.Left(COMMA_PREC, LeftComma, [','])
-
-  # 0 precedence -- doesn't bind until )
-  spec.Null(0, NullParen, ['('])  # for grouping
-
-  # -1 precedence -- never used
-  spec.Null(-1, NullConstant, ['name', 'number'])
-  spec.Null(-1, tdop.NullError, [')', ']', ':', 'eof'])
-
-  return spec
+# -1 precedence -- never used
+@rule_map.register_null(-1, ["name", "number"])
+def null_constant(token_stream: TokenStream, bp: int) -> Node:
+    before = next(token_stream)
+    return Node(before, [])
 
 
-def MakeParser(s):
-  """Used by tests."""
-  spec = MakeShellParserSpec()
-  lexer = tdop.Tokenize(s)
-  p = tdop.Parser(spec, lexer)
-  return p
+# 0 precedence -- doesn't bind until )
+@rule_map.register_null(0, ["("])
+def null_paren(token_stream: TokenStream, bp: int) -> Node:
+    """ Arithmetic grouping """
+    next(token_stream)
+    r = p.parse(rule_map, token_stream, bp)
+    p.eat(token_stream, ")")
+    return r
 
 
-def ParseShell(s, expected=None):
-  """Used by tests."""
-  p = MakeParser(s)
-  tree = p.Parse()
+@rule_map.register_null(27, ["+", "!", "~", "-"])
+def null_prefix_op(token_stream: TokenStream, bp: int) -> Node:
+    """Prefix operator.
 
-  sexpr = repr(tree)
-  if expected is not None:
-    assert sexpr == expected, '%r != %r' % (sexpr, expected)
+    Low precedence:  return, raise, etc.
+      return x+y is return (x+y), not (return x) + y
 
-  print('%-40s %s' % (s, sexpr))
-  return tree
-
-
-def main(argv):
-  try:
-    s = argv[1]
-  except IndexError:
-    print('Usage: ./arith_parse.py EXPRESSION')
-  else:
-    try:
-      tree = ParseShell(s)
-    except tdop.ParseError as e:
-      print('Error parsing %r: %s' % (s, e), file=sys.stderr)
+    High precedence: logical negation, bitwise complement, etc.
+      !x && y is (!x) && y, not !(x && y)
+    """
+    before = next(token_stream)
+    r = p.parse(rule_map, token_stream, bp)
+    return Node(before, [r])
 
 
-if __name__ == '__main__':
-  main(sys.argv)
+# 29 -- binds to everything except function call, indexing, postfix ops
+@rule_map.register_null(29, ["++", "--"])
+def null_inc_dec(token_stream: TokenStream, bp: int) -> Node:
+    """ ++x or ++x[1] """
+    before = next(token_stream)
+    right = p.parse(rule_map, token_stream, bp)
+    if right.token.type not in ("name", "get"):
+        raise ParseError("Can't assign to %r (%s)" % (right, right.token))
+    return Node(before, [right])
+
+
+@rule_map.register_left(31, ["++", "--"])
+def left_inc_dec(token_stream: TokenStream, rbp: int, left: Node) -> Node:
+    """For i++ and i--"""
+    before = next(token_stream)
+    if left.token.type not in ("name", "get"):
+        raise ParseError("Can't assign to %r (%s)" % (left, left.token))
+    before.type = "post" + before.type
+    return Node(before, [left])
+
+
+@rule_map.register_left(31, ["["])
+def left_index(token_stream: TokenStream, rbp: int, left: Node) -> Node:
+    """ index f[x+1] """
+    # f[x] or f[x][y]
+    before = next(token_stream)
+    if left.token.type not in ("name", "get"):
+        raise ParseError("%s can't be indexed" % left)
+    index = p.parse(rule_map, token_stream, 0)
+    p.eat(token_stream, "]")
+
+    before.type = "get"
+    return Node(before, [left, index])
+
+
+@rule_map.register_left(5, ["?"], is_left_right_assoc=True)
+def left_ternary(token_stream: TokenStream, rbp: int, left: Node) -> Node:
+    """ e.g. a > 1 ? x : y """
+    # 0 binding power since any operators allowed until ':'.  See:
+    #
+    # http://en.cppreference.com/w/c/language/operator_precedence#cite_note-2
+    #
+    # "The expression in the middle of the conditional operator (between ? and
+    # :) is parsed as if parenthesized: its precedence relative to ?: is
+    # ignored."
+    before = next(token_stream)
+    true_expr = p.parse(rule_map, token_stream, 0)
+
+    p.eat(token_stream, ":")
+    false_expr = p.parse(rule_map, token_stream, rbp)
+    children = [left, true_expr, false_expr]
+    return Node(before, children)
+
+
+@rule_map.register_left(25, ["*", "/", "%"])
+@rule_map.register_left(23, ["+", "-"])
+@rule_map.register_left(21, ["<<", ">>"])
+@rule_map.register_left(19, ["<", ">", "<=", ">="])
+@rule_map.register_left(17, ["!=", "=="])
+@rule_map.register_left(15, ["&"])
+@rule_map.register_left(13, ["^"])
+@rule_map.register_left(11, ["|"])
+@rule_map.register_left(9, ["&&"])
+@rule_map.register_left(7, ["||"])
+# Right associative: 2 ** 3 ** 2 == 2 ** (3 ** 2)
+# Binds more strongly than negation.
+@rule_map.register_left(29, ["**"], is_left_right_assoc=True)
+def left_binary_op(token_stream: TokenStream, rbp: int, left: Node) -> Node:
+    """ Normal binary operator like 1+2 or 2*3, etc. """
+    before = next(token_stream)
+    return Node(before, [left, p.parse(rule_map, token_stream, rbp)])
+
+
+@rule_map.register_left(
+    3,
+    ["=", "+=", "-=", "*=", "/=", "%=", "<<=", ">>=", "&=", "^=", "|="],
+    is_left_right_assoc=True,
+)
+def left_assign(token_stream: TokenStream, rbp: int, left: Node) -> Node:
+    """ Normal binary operator like 1+2 or 2*3, etc. """
+    # x += 1, or a[i] += 1
+    before = next(token_stream)
+    if left.token.type not in ("name", "get"):
+        raise ParseError("Can't assign to %r (%s)" % (left, left.token))
+    return Node(before, [left, p.parse(rule_map, token_stream, rbp)])
+
+
+@rule_map.register_left(COMMA_PREC, [","])
+def left_comma(token_stream: TokenStream, rbp: int, left: Node) -> Node:
+    """foo, bar, baz
+
+    Could be sequencing operator, or tuple without parens
+    """
+    before = next(token_stream)
+    r = p.parse(rule_map, token_stream, rbp)
+    if left.token.type == ",":  # Keep adding more children
+        left.children.append(r)
+        return left
+    children = [left, r]
+    return Node(before, children)
+
+
+@rule_map.register_left(31, ["("])
+def left_func_call(token_stream: TokenStream, rbp: int, left: Node) -> Node:
+    """ Function call f(a, b). """
+    before = next(token_stream)
+    children = [left]
+    # f(x) or f[i](x)
+    if left.token.type not in ("name", "get"):
+        raise ParseError("%s can't be called" % left)
+    while True:
+        if token_stream.current.type == ")":
+            break
+        # We don't want to grab the comma, e.g. it is NOT a sequence operator.  So
+        # set the precedence to 5.
+        children.append(p.parse(rule_map, token_stream, COMMA_PREC))
+        if token_stream.current.type == ",":
+            p.eat(token_stream, ",")
+    p.eat(token_stream, ")")
+    before.type = "call"
+    return Node(before, children)
